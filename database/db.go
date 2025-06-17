@@ -2,28 +2,54 @@ package database
 
 import (
 	"context"
-	"errors"
+	"fmt"
 
-	"github.com/AntiB-Projects/agentic_go/config"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgxvector "github.com/pgvector/pgvector-go/pgx"
 )
 
-// DB is the global database connection pool
-var DB *pgxpool.Pool
+// Database holds the connection pool and repositories.
+type Database struct {
+	pool        *pgxpool.Pool
+	Users       UserStorer
+	Preferences PreferenceStorer
+}
 
-func Init(cfg *config.Config) error {
-
-	pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
+// New creates a new database connection pool and registers the pgvector type.
+func New(ctx context.Context, databaseURL string) (*Database, error) {
+	config, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
-		return errors.New("failed to connect to db: " + err.Error())
+		return nil, fmt.Errorf("failed to parse database URL: %w", err)
 	}
 
-	// test connection
-	if err := pool.Ping(context.Background()); err != nil {
+	// This is the key part for pgvector-go integration.
+	// We register the custom 'vector' type with pgx.
+	config.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		return pgxvector.RegisterTypes(ctx, conn)
+	}
+
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to db: %w", err)
+	}
+
+	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
-		return errors.New("failed to ping db: " + err.Error())
+		return nil, fmt.Errorf("failed to ping db: %w", err)
 	}
 
-	DB = pool
-	return nil
+	// Create the Database struct and attach repository implementations
+	db := &Database{
+		pool: pool,
+	}
+	db.Users = &UserRepository{conn: db.pool}
+	db.Preferences = &PreferenceRepository{conn: db.pool}
+
+	return db, nil
+}
+
+// Close gracefully closes the database connection pool.
+func (db *Database) Close() {
+	db.pool.Close()
 }

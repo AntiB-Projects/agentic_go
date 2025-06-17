@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -26,17 +27,46 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	dbURL, err := mustEnv("DATABASE_URL")
+	// Read individual database environment variables
+	dbHost, err := mustEnv("DATABASE_HOST")
 	if err != nil {
 		return nil, err
 	}
+	dbPort, err := mustEnv("DATABASE_PORT")
+	if err != nil {
+		return nil, err
+	}
+	dbName, err := mustEnv("DATABASE_NAME")
+	if err != nil {
+		return nil, err
+	}
+	dbUser, err := mustEnv("DATABASE_USER")
+	if err != nil {
+		return nil, err
+	}
+	dbPassword, err := mustEnv("DATABASE_PASSWORD")
+	if err != nil {
+		return nil, err
+	}
+
+	// Construct the DatabaseURL
+	// The format for PostgreSQL is:
+	// postgresql://user:password@host:port/dbname?sslmode=disable
+	// For other databases, the scheme and parameters might differ.
+	databaseURL := fmt.Sprintf("postgresql://%s:%s@%s:%s/%s?sslmode=disable",
+		url.QueryEscape(dbUser), // URL-encode user and password
+		url.QueryEscape(dbPassword),
+		dbHost,
+		dbPort,
+		dbName,
+	)
 
 	model := getEnvWithDefault("GEMINI_MODEL", "gemini-1.5-flash")
 
 	cfg := &Config{
 		GeminiModel:  model,
 		GeminiAPIKey: apiKey,
-		DatabaseURL:  dbURL,
+		DatabaseURL:  databaseURL,
 	}
 	return cfg, nil
 }
